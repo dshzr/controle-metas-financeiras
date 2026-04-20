@@ -74,7 +74,8 @@ app.post('/api/auth/register', async (req, res) => {
     const token = jwt.sign({ id: newUser.rows[0].id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token });
   } catch (err: any) {
-    res.status(500).json({ error: 'Erro no servidor' });
+    console.error("Register Error:", err);
+    res.status(500).json({ error: 'Erro no servidor: ' + (err.message || String(err)) });
   }
 });
 
@@ -91,7 +92,8 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token });
   } catch (err: any) {
-    res.status(500).json({ error: 'Erro no servidor' });
+    console.error("Login Error:", err);
+    res.status(500).json({ error: 'Erro no servidor: ' + (err.message || String(err)) });
   }
 });
 
@@ -99,8 +101,9 @@ app.get('/api/auth/me', authMiddleware, async (req: any, res: any) => {
   try {
     const userResult = await pool.query('SELECT id, email FROM users WHERE id = $1', [req.userId]);
     res.json({ user: userResult.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: 'Erro no servidor' });
+  } catch (err: any) {
+    console.error("Auth Me Error:", err);
+    res.status(500).json({ error: 'Erro no servidor: ' + (err.message || String(err)) });
   }
 });
 
