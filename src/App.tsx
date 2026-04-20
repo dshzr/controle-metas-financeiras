@@ -4,25 +4,57 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, LayoutGrid, List, TrendingUp, PieChart, Activity } from 'lucide-react';
+import { Plus, LayoutGrid, List, TrendingUp, PieChart, Activity, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Goal } from './types';
-import { storage } from './lib/storage';
+import { api, authState } from './lib/api';
 import { GoalCard } from './components/GoalCard';
 import { GoalModal } from './components/GoalModal';
 import { ValueUpdateModal } from './components/ValueUpdateModal';
+import { Auth } from './components/Auth';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isValueModalOpen, setIsValueModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [activeGoal, setActiveGoal] = useState<Goal | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [loading, setLoading] = useState(true);
+
+  const fetchGoals = async () => {
+    try {
+      const data = await api.getGoals();
+      setGoals(data);
+    } catch (err) {
+      console.error(err);
+      if (err instanceof Error && err.message.includes('401')) {
+        handleLogout();
+      }
+    }
+  };
 
   useEffect(() => {
-    setGoals(storage.getGoals());
+    const token = authState.getToken();
+    if (token) {
+      setIsAuthenticated(true);
+      fetchGoals().finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
   }, []);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    fetchGoals();
+  };
+
+  const handleLogout = () => {
+    authState.clearToken();
+    setIsAuthenticated(false);
+    setGoals([]);
+  };
 
   const stats = useMemo(() => {
     const totalTarget = goals.reduce((sum, g) => sum + g.targetAmount, 0);
@@ -33,36 +65,55 @@ export default function App() {
     return { totalTarget, totalCurrent, overallProgress, completedCount };
   }, [goals]);
 
-  const handleSaveGoal = (goalData: Omit<Goal, 'id' | 'createdAt'>, id?: string) => {
-    let updatedGoals: Goal[];
-    if (id) {
-      updatedGoals = goals.map(g => (g.id === id ? { ...g, ...goalData } : g));
-    } else {
-      const newGoal: Goal = {
-        ...goalData,
-        id: Math.random().toString(36).substring(2, 9),
-        createdAt: new Date().toISOString(),
-      };
-      updatedGoals = [...goals, newGoal];
+  const handleSaveGoal = async (goalData: Omit<Goal, 'id' | 'createdAt'>, id?: string) => {
+    try {
+      if (id) {
+        const goalToUpdate = goals.find(g => g.id === id);
+        if (!goalToUpdate) return;
+        const updated = await api.updateGoal(id, { ...goalData, currentAmount: goalToUpdate.currentAmount });
+        setGoals(goals.map(g => (g.id === id ? updated : g)));
+      } else {
+        const newGoal = await api.createGoal(goalData);
+        setGoals([...goals, newGoal]);
+      }
+      setEditingGoal(null);
+    } catch (err) {
+      console.error('Save error', err);
+      alert('Erro ao salvar meta');
     }
-    setGoals(updatedGoals);
-    storage.saveGoals(updatedGoals);
-    setEditingGoal(null);
   };
 
-  const handleUpdateAmount = (id: string, amount: number) => {
-    const updatedGoals = goals.map(g => 
-      g.id === id ? { ...g, currentAmount: Math.max(0, g.currentAmount + amount) } : g
-    );
-    setGoals(updatedGoals);
-    storage.saveGoals(updatedGoals);
+  const handleUpdateAmount = async (id: string, amountToAdd: number) => {
+    try {
+      const goalToUpdate = goals.find(g => g.id === id);
+      if (!goalToUpdate) return;
+      
+      const newAmount = Math.max(0, goalToUpdate.currentAmount + amountToAdd);
+      
+      const updated = await api.updateGoal(id, {
+        name: goalToUpdate.name,
+        targetAmount: goalToUpdate.targetAmount,
+        deadline: goalToUpdate.deadline,
+        category: goalToUpdate.category,
+        currentAmount: newAmount,
+      });
+
+      setGoals(goals.map(g => (g.id === id ? updated : g)));
+    } catch (err) {
+      console.error('Update error', err);
+      alert('Erro ao atualizar valor');
+    }
   };
 
-  const handleDeleteGoal = (id: string) => {
+  const handleDeleteGoal = async (id: string) => {
     if (confirm('Tem certeza que deseja excluir esta meta?')) {
-      const updatedGoals = goals.filter(g => g.id !== id);
-      setGoals(updatedGoals);
-      storage.saveGoals(updatedGoals);
+      try {
+        await api.deleteGoal(id);
+        setGoals(goals.filter(g => g.id !== id));
+      } catch (err) {
+        console.error('Delete error', err);
+        alert('Erro ao excluir meta');
+      }
     }
   };
 
@@ -88,6 +139,12 @@ export default function App() {
     }).format(value);
   };
 
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+
+  if (!isAuthenticated) {
+    return <Auth onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen pb-20">
       {/* Header */}
@@ -99,13 +156,22 @@ export default function App() {
             </div>
             <h1 className="text-xl font-bold tracking-tight text-gray-900">GoalFlow</h1>
           </div>
-          <button
-            onClick={openNewGoalModal}
-            className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-gray-100 flex items-center gap-2"
-          >
-            <Plus size={18} />
-            Nova Meta
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={openNewGoalModal}
+              className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-gray-100 flex items-center gap-2"
+            >
+              <Plus size={18} />
+              Nova Meta
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+              title="Sair"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
