@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 
 // Load environment variables early
 import 'dotenv/config';
-import apiRoutes from './api/index.js';
+import apiRoutes from './api/server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
