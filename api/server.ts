@@ -8,6 +8,17 @@ const app = express();
 
 app.use(express.json());
 
+// Verifica se a URL do banco está configurada para evitar que o PG tente conectar no localhost(127.0.0.1) por padrão.
+app.use((req, res, next) => {
+  if (!process.env.DATABASE_URL) {
+    console.error("ERRO CRÍTICO: DATABASE_URL não está definida!");
+    return res.status(500).json({ 
+      error: 'Variável DATABASE_URL não configurada no servidor (Vercel). Acesse as configurações do seu projeto na Vercel e adicione-a.' 
+    });
+  }
+  next();
+});
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
