@@ -98,7 +98,7 @@ export const GoalCard: React.FC<GoalCardProps> = ({ goal, onAddValue, onEdit, on
                 {goal.deadline && (
                   <div className="flex items-center gap-1.5 text-sm w-fit text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg">
                     <Calendar size={14} />
-                    <span className="font-medium">{new Date(goal.deadline).toLocaleDateString('pt-BR')}</span>
+                    <span className="font-medium">{new Date(goal.deadline + "T12:00:00").toLocaleDateString('pt-BR')}</span>
                   </div>
                 )}
               </div>

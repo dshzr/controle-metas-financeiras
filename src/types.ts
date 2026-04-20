@@ -14,3 +14,13 @@ export interface Goal {
 }
 
 export type Category = Goal['category'];
+
+export interface Bill {
+  id: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  isRecurring: boolean;
+  status: 'pending' | 'paid';
+  createdAt: string;
+}

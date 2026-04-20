@@ -45,6 +45,17 @@ async function initDb() {
         category VARCHAR(50) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS bills (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        description VARCHAR(255) NOT NULL,
+        amount NUMERIC(12, 2) NOT NULL,
+        due_date DATE NOT NULL,
+        is_recurring BOOLEAN DEFAULT false,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   } catch (err) {
     console.error("Error initializing database:", err);
@@ -120,13 +131,16 @@ app.get('/api/auth/me', authMiddleware, async (req: any, res: any) => {
 
 app.get('/api/goals', authMiddleware, async (req: any, res: any) => {
   try {
-    const goalsResult = await pool.query('SELECT * FROM goals WHERE user_id = $1 ORDER BY created_at ASC', [req.userId]);
+    const goalsResult = await pool.query(`
+      SELECT *, TO_CHAR(deadline, 'YYYY-MM-DD') as deadline_str 
+      FROM goals WHERE user_id = $1 ORDER BY created_at ASC
+    `, [req.userId]);
     const formattedGoals = goalsResult.rows.map(g => ({
       id: g.id,
       name: g.name,
       targetAmount: Number(g.target_amount),
       currentAmount: Number(g.current_amount),
-      deadline: g.deadline ? g.deadline.toISOString() : undefined,
+      deadline: g.deadline_str || undefined,
       category: g.category,
       createdAt: g.created_at.toISOString()
     }));
@@ -141,7 +155,7 @@ app.post('/api/goals', authMiddleware, async (req: any, res: any) => {
   try {
     const newGoal = await pool.query(
       `INSERT INTO goals (user_id, name, target_amount, current_amount, deadline, category) 
-       VALUES ($1, $2, $3, 0, $4, $5) RETURNING *`,
+       VALUES ($1, $2, $3, 0, $4, $5) RETURNING *, TO_CHAR(deadline, 'YYYY-MM-DD') as deadline_str`,
       [req.userId, name, targetAmount, deadline || null, category]
     );
     const g = newGoal.rows[0];
@@ -150,7 +164,7 @@ app.post('/api/goals', authMiddleware, async (req: any, res: any) => {
       name: g.name,
       targetAmount: Number(g.target_amount),
       currentAmount: Number(g.current_amount),
-      deadline: g.deadline ? g.deadline.toISOString() : undefined,
+      deadline: g.deadline_str || undefined,
       category: g.category,
       createdAt: g.created_at.toISOString()
     });
@@ -168,7 +182,7 @@ app.put('/api/goals/:id', authMiddleware, async (req: any, res: any) => {
 
     const updated = await pool.query(
       `UPDATE goals SET name = $1, target_amount = $2, current_amount = $3, deadline = $4, category = $5
-       WHERE id = $6 RETURNING *`,
+       WHERE id = $6 RETURNING *, TO_CHAR(deadline, 'YYYY-MM-DD') as deadline_str`,
       [name, targetAmount, currentAmount, deadline || null, category, id]
     );
     const g = updated.rows[0];
@@ -177,7 +191,7 @@ app.put('/api/goals/:id', authMiddleware, async (req: any, res: any) => {
       name: g.name,
       targetAmount: Number(g.target_amount),
       currentAmount: Number(g.current_amount),
-      deadline: g.deadline ? g.deadline.toISOString() : undefined,
+      deadline: g.deadline_str || undefined,
       category: g.category,
       createdAt: g.created_at.toISOString()
     });
@@ -194,6 +208,93 @@ app.delete('/api/goals/:id', authMiddleware, async (req: any, res: any) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Erro ao deletar meta.' });
+  }
+});
+
+// --- BILLS ROUTES ---
+app.get('/api/bills', authMiddleware, async (req: any, res: any) => {
+  try {
+    const billsResult = await pool.query(`
+      SELECT *, TO_CHAR(due_date, 'YYYY-MM-DD') as due_date_str 
+      FROM bills WHERE user_id = $1 ORDER BY due_date ASC
+    `, [req.userId]);
+    const formattedBills = billsResult.rows.map(b => ({
+      id: b.id,
+      description: b.description,
+      amount: Number(b.amount),
+      dueDate: b.due_date_str,
+      isRecurring: b.is_recurring,
+      status: b.status,
+      createdAt: b.created_at.toISOString()
+    }));
+    res.json(formattedBills);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao buscar contas.' });
+  }
+});
+
+app.post('/api/bills', authMiddleware, async (req: any, res: any) => {
+  const { description, amount, dueDate, isRecurring, status } = req.body;
+  try {
+    const newBill = await pool.query(
+      `INSERT INTO bills (user_id, description, amount, due_date, is_recurring, status) 
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *, TO_CHAR(due_date, 'YYYY-MM-DD') as due_date_str`,
+      [req.userId, description, amount, dueDate, isRecurring || false, status || 'pending']
+    );
+    const b = newBill.rows[0];
+    res.json({
+      id: b.id,
+      description: b.description,
+      amount: Number(b.amount),
+      dueDate: b.due_date_str,
+      isRecurring: b.is_recurring,
+      status: b.status,
+      createdAt: b.created_at.toISOString()
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao criar conta.' });
+  }
+});
+
+app.put('/api/bills/:id', authMiddleware, async (req: any, res: any) => {
+  const { id } = req.params;
+  const { description, amount, dueDate, isRecurring, status } = req.body;
+  try {
+    const check = await pool.query('SELECT id FROM bills WHERE id = $1 AND user_id = $2', [id, req.userId]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
+
+    const updated = await pool.query(
+      `UPDATE bills SET description = $1, amount = $2, due_date = $3, is_recurring = $4, status = $5
+       WHERE id = $6 RETURNING *, TO_CHAR(due_date, 'YYYY-MM-DD') as due_date_str`,
+      [description, amount, dueDate, isRecurring, status, id]
+    );
+    const b = updated.rows[0];
+    res.json({
+      id: b.id,
+      description: b.description,
+      amount: Number(b.amount),
+      dueDate: b.due_date_str,
+      isRecurring: b.is_recurring,
+      status: b.status,
+      createdAt: b.created_at.toISOString()
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao atualizar conta.' });
+  }
+});
+
+app.delete('/api/bills/:id', authMiddleware, async (req: any, res: any) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2 RETURNING id', [id, req.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao deletar conta.' });
   }
 });
 

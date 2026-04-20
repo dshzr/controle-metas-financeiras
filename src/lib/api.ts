@@ -58,5 +58,39 @@ export const api = {
       headers: getHeaders()
     });
     if (!res.ok) throw new Error('Falha ao deletar meta');
+  },
+
+  getBills: async (): Promise<any[]> => {
+    const res = await fetch('/api/bills', { headers: getHeaders() });
+    if (!res.ok) throw new Error('Falha ao buscar contas');
+    return res.json();
+  },
+
+  createBill: async (bill: any): Promise<any> => {
+    const res = await fetch('/api/bills', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(bill)
+    });
+    if (!res.ok) throw new Error('Falha ao criar conta');
+    return res.json();
+  },
+
+  updateBill: async (id: string, bill: any): Promise<any> => {
+    const res = await fetch(`/api/bills/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(bill)
+    });
+    if (!res.ok) throw new Error('Falha ao atualizar conta');
+    return res.json();
+  },
+
+  deleteBill: async (id: string): Promise<void> => {
+    const res = await fetch(`/api/bills/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    if (!res.ok) throw new Error('Falha ao deletar conta');
   }
 };
