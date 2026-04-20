@@ -20,6 +20,12 @@ const getHeaders = () => {
 };
 
 export const api = {
+  getCurrentUser: async (): Promise<{user: {id: string, email: string}}> => {
+    const res = await fetch('/api/auth/me', { headers: getHeaders() });
+    if (!res.ok) throw new Error('Falha ao obter usuário logado');
+    return res.json();
+  },
+
   getGoals: async (): Promise<Goal[]> => {
     const res = await fetch('/api/goals', { headers: getHeaders() });
     if (!res.ok) throw new Error('Falha ao buscar metas');

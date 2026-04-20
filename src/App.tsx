@@ -15,6 +15,7 @@ import { Auth } from './components/Auth';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<{email: string} | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isValueModalOpen, setIsValueModalOpen] = useState(false);
@@ -23,13 +24,17 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [loading, setLoading] = useState(true);
 
-  const fetchGoals = async () => {
+  const fetchData = async () => {
     try {
-      const data = await api.getGoals();
-      setGoals(data);
+      const [goalsData, userData] = await Promise.all([
+        api.getGoals(),
+        api.getCurrentUser()
+      ]);
+      setGoals(goalsData);
+      setUser(userData.user);
     } catch (err) {
       console.error(err);
-      if (err instanceof Error && err.message.includes('401')) {
+      if (err instanceof Error && (err.message.includes('401') || err.message.includes('Token') || err.message.includes('buscar'))) {
         handleLogout();
       }
     }
@@ -39,7 +44,7 @@ export default function App() {
     const token = authState.getToken();
     if (token) {
       setIsAuthenticated(true);
-      fetchGoals().finally(() => setLoading(false));
+      fetchData().finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
@@ -47,13 +52,14 @@ export default function App() {
 
   const handleLogin = () => {
     setIsAuthenticated(true);
-    fetchGoals();
+    fetchData();
   };
 
   const handleLogout = () => {
     authState.clearToken();
     setIsAuthenticated(false);
     setGoals([]);
+    setUser(null);
   };
 
   const stats = useMemo(() => {
@@ -162,8 +168,17 @@ export default function App() {
               className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-all shadow-lg shadow-gray-100 flex items-center gap-2"
             >
               <Plus size={18} />
-              Nova Meta
+              <span className="hidden sm:inline">Nova Meta</span>
             </button>
+            <div className="w-px h-6 bg-gray-200 mx-1 hidden sm:block"></div>
+            {user && (
+              <div className="flex items-center gap-2 px-2 text-sm font-medium text-gray-600">
+                <div className="bg-blue-100 text-blue-700 w-8 h-8 rounded-full flex items-center justify-center uppercase font-bold text-sm">
+                  {user.email.charAt(0)}
+                </div>
+                <span className="hidden leading-tight sm:block font-semibold">{user.email.split('@')[0]}</span>
+              </div>
+            )}
             <button
               onClick={handleLogout}
               className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
